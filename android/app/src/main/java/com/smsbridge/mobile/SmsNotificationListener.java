@@ -110,13 +110,25 @@ public final class SmsNotificationListener extends NotificationListenerService {
         boolean isSms = isSmsPackage(pkg);
         boolean inScope = isSms || selected.contains(pkg);
 
+        // vivo 等把短信正文塞进标题，格式: "发件人∣正文" 或 "发件人 - 验证码" 等
+        if (isSms && body.isEmpty() && sub.isEmpty() && title.contains("∣")) {
+            String[] parts = title.split("∣", 2);
+            if (parts.length >= 2) {
+                body = parts[1].trim();
+            }
+        }
+
+        if (!inScope) {
+            drop(pkg, title, "跳过：未在读取列表 isSms=" + isSms
+                    + " 已勾选=" + selected.size() + " source=" + source, inScope);
+            return;
+        }
+
+        // vivo 等把短信塞进标题（后续已尝试拆 title），仍然拿不到正文时，
+        // 给系统短信一个占位提示，避免同步一条空消息。
         if (body.isEmpty() && sub.isEmpty()) {
             if (isSms) {
-                // 系统短信正文被系统隐藏（锁屏隐藏敏感内容 / 厂商隐私 / Android 12+ 脱敏），
-                // 照样入队，让用户至少知道「来短信了」，并提示去关闭隐藏。
-                body = "（短信正文被系统隐藏，请在系统设置里关闭该短信 App 的"
-                        + "「隐藏敏感通知内容」后重试）";
-                // 不 return，继续往下走 inScope / likelyCode 判定。
+                body = "（短信正文被系统隐藏，请在系统设置里允许「短信 App」的锁屏通知）";
                 prefs.addEvent("收到系统短信通知，但正文被系统隐藏（" + pkg + "）");
             } else {
                 drop(pkg, title, "正文为空（取不到 EXTRA_TEXT/BIG_TEXT/TEXT_LINES/"
@@ -125,17 +137,12 @@ public final class SmsNotificationListener extends NotificationListenerService {
                 return;
             }
         }
+
         if (!sub.isEmpty() && !body.contains(sub)) {
             body = body.isEmpty() ? sub : body + " " + sub;
         }
         if (title.isEmpty()) {
             title = "通知消息";
-        }
-
-        if (!inScope) {
-            drop(pkg, title, "跳过：未在读取列表 isSms=" + isSms
-                    + " 已勾选=" + selected.size() + " source=" + source, inScope);
-            return;
         }
 
         // 系统短信一律同步（短信正文本来就该同步，不做验证码过滤）；
