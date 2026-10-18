@@ -124,7 +124,3 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows\build.ps1 -Package
 ## 许可
 
 非商业使用许可，禁止商业用途，禁止植入后门。详见 [LICENSE](LICENSE) 和 [NOTICE.md](NOTICE.md)。
-
-## 已知问题
-
-见 [BUGS.md](BUGS.md)。这个项目没有在大量机型上做过完整测试，遇到问题欢迎提交 Issue，并附上手机型号、Android 版本、App 版本和日志。
