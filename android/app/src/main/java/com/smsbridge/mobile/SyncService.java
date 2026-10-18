@@ -198,8 +198,6 @@ public final class SyncService extends Service {
                         intent.getLongExtra(EXTRA_TS, System.currentTimeMillis()),
                         false);
                 prefs.enqueue(msg);
-                SmsLogger.logSms(this, "service-intent", msg,
-                        "enabled=" + prefs.enabled());
                 log("收到短信，已放入队列");
                 if (!prefs.enabled()) {
                     log("同步开关未开启，短信留在手机队列");
@@ -678,8 +676,7 @@ public final class SyncService extends Service {
                 startService(new Intent(this, SyncService.class)
                         .setAction(ACTION_START));
             } catch (Exception e) {
-                SmsLogger.event(this, "任务移除后重启服务失败："
-                        + e.getClass().getSimpleName());
+                log("任务移除后重启服务失败：" + e.getClass().getSimpleName());
             }
         }
         super.onTaskRemoved(rootIntent);
@@ -774,7 +771,6 @@ public final class SyncService extends Service {
         if (prefs != null) {
             prefs.addEvent(line);
         }
-        SmsLogger.event(this, line);
         MAIN.post(() -> {
             for (Listener listener : LISTENERS) {
                 listener.onLog(line);

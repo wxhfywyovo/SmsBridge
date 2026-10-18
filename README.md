@@ -35,8 +35,8 @@
 - 6 位配对码 + 32 字节持久令牌，配对一次后自动重连
 - 局域网 UDP 自动发现电脑，也可手动填 IP
 - 电脑离线时手机先入队，连上后补发
-- 支持通知读取（按你勾选的 App 读取，系统短信 App 始终读取）
-- 通知读取范围由你自选，可搜索 App 名称后勾选；QQ/微信需要同步就勾上
+- 支持通知读取：系统短信 App 的通知自动识别并同步，无需配置
+- 首次打开强制阅读免责声明；主页面底部有 GitHub 开源仓库跳转（默认浏览器打开）
 - Windows 单实例：再次打开只唤起已有窗口
 - 托盘菜单、开机自启、锁屏保活、隐藏后台开关
 
@@ -55,7 +55,7 @@ release/      打包后的 APK + Windows 压缩包 + 发布 zip
 
 ### 安卓
 
-安装 `release/SmsBridge.apk`（Android 8.0+，当前 1.3.7 / versionCode 24）。
+安装 `release/SmsBridge.apk`（Android 8.0+，当前 1.3.11 / versionCode 28）。
 
 首次需要授予：
 
@@ -65,7 +65,7 @@ release/      打包后的 APK + Windows 压缩包 + 发布 zip
 
 ### Windows
 
-解压 `release/SmsBridge-release-1.3.7.zip`，里面包含：
+解压 `release/SmsBridge-release-1.3.11.zip`，里面包含：
 
 ```text
 SmsBridge.apk

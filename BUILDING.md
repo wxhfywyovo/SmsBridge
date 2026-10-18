@@ -61,10 +61,10 @@ java -cp "windows\build\classes;windows\test" com.smsbridge.pc.test.TestHarness
 
 ## 发布 zip
 
-`release/SmsBridge-release-1.3.2.zip` 包含：
+`release/SmsBridge-release-1.3.11.zip` 包含：
 
 ```text
-SmsBridge-release-1.3.2/
+SmsBridge-release-1.3.11/
 ├─ SmsBridge.apk
 ├─ SmsBridge-win-x64.zip
 ├─ README.md

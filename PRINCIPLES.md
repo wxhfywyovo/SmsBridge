@@ -33,12 +33,11 @@ SmsBridge 解决一个很具体的问题：
 |---|---|
 | `MainActivity` | 界面、权限、配对、诊断、日志 |
 | `SyncService` | 前台服务：WebSocket 连接、队列、重连、保活 |
-| `SmsNotificationListener` | 读取系统短信 App 及你勾选的 App 的通知 |
+| `SmsNotificationListener` | 读取系统短信 App 的通知 |
 | `SmsCode` | 本地提取 4-8 位验证码 |
 | `Prefs` | 配对信息、设备 ID、队列、最近记录、事件 |
 | `Discovery` | UDP 发现电脑 |
 | `PairingInfo` | 解析剪贴板里的配对信息 |
-| `SmsLogger` | 完整短信/通知日志 |
 | `BootReceiver` | 开机自启 |
 
 ### 2.1 短信来源
@@ -46,9 +45,9 @@ SmsBridge 解决一个很具体的问题：
 按优先级：
 
 1. **通知读取**：系统收到短信时，系统短信 App 会在通知栏发出通知，
-   `SmsNotificationListener` 拦截并解析正文（支持 MessagingStyle 等格式）；
-   系统短信 App 始终在读取范围内，用户勾选的其他 App 只同步含验证码的通知；
-2. **手动诊断**：查看通知日志 / 诊断信息 / 日志。
+   `SmsNotificationListener` 拦截并解析正文（支持 MessagingStyle、正文塞标题等格式）；
+   只读取系统短信 App 的通知，其他 App 一律不同步；
+2. **手动诊断**：诊断信息 / 测试同步。
 
 ### 2.2 去重
 

@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -169,34 +168,6 @@ public final class Prefs {
 
     public void setDisclaimerAccepted(boolean value) {
         sp.edit().putBoolean("disclaimerAccepted", value).apply();
-    }
-
-    /** 用户勾选的、允许读取通知的 App 包名列表。 */
-    public synchronized Set<String> notifPackages() {
-        Set<String> result = new LinkedHashSet<>();
-        String raw = sp.getString("notifPkgs", "");
-        if (raw != null && !raw.isEmpty()) {
-            for (String pkg : raw.split(",")) {
-                if (pkg != null && !pkg.trim().isEmpty()) {
-                    result.add(pkg.trim());
-                }
-            }
-        }
-        return result;
-    }
-
-    public synchronized void setNotifPackages(Set<String> packages) {
-        StringBuilder sb = new StringBuilder();
-        for (String pkg : packages) {
-            if (pkg == null || pkg.isEmpty()) {
-                continue;
-            }
-            if (sb.length() > 0) {
-                sb.append(',');
-            }
-            sb.append(pkg);
-        }
-        sp.edit().putString("notifPkgs", sb.toString()).apply();
     }
 
     public boolean hasPairing() {

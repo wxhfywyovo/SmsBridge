@@ -63,7 +63,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
     private LinearLayout permissionRow;
     private TextView notificationAccessLine;
     private Button notificationAccessButton;
-    private Button scopeButton;
     private EditText hostField;
     private EditText portField;
     private EditText pinField;
@@ -189,7 +188,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         logLine = text("等待启动…", 10.5f, muted, false);
         logLine.setGravity(Gravity.CENTER);
         root.addView(logLine);
-        TextView footer = text("SmsBridge 1.3.9 · 数据只在局域网里传输", 10, muted, false);
+        TextView footer = text("SmsBridge 1.3.11 · 数据只在局域网里传输", 10, muted, false);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, dp(4), 0, 0);
         root.addView(footer);
@@ -402,23 +401,11 @@ public final class MainActivity extends Activity implements SyncService.Listener
         });
         card.addView(flush);
 
-        TextView smsLog = text("查看短信日志（含完整正文）", 10.5f, muted, false);
-        smsLog.setPadding(0, dp(8), 0, 0);
-        smsLog.setOnClickListener(v -> showSmsLog());
-        card.addView(smsLog);
-
-        notificationAccessLine = text("通知读取（系统短信始终读取；勾选的 App 只同步验证码）：检查中…",
+        notificationAccessLine = text("通知读取（系统短信）：检查中…",
                 10.5f, muted, false);
         notificationAccessLine.setPadding(0, dp(8), 0, 0);
         notificationAccessLine.setOnClickListener(v -> openNotificationAccess());
         card.addView(notificationAccessLine);
-
-        scopeButton = button("选择读取通知的 App", false);
-        scopeButton.setOnClickListener(v -> showAppPicker());
-        LinearLayout.LayoutParams scopeParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        scopeParams.topMargin = dp(8);
-        card.addView(scopeButton, scopeParams);
 
         notificationAccessButton = button("开启通知读取", false);
         notificationAccessButton.setOnClickListener(v -> openNotificationAccess());
@@ -885,14 +872,11 @@ public final class MainActivity extends Activity implements SyncService.Listener
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             chipParams.topMargin = dp(6);
             row.addView(chip, chipParams);
+        } else {
+            TextView none = text("未识别到验证码", 10.5f, muted, false);
+            none.setPadding(0, dp(6), 0, 0);
+            row.addView(none);
         }
-
-        TextView body = text(msg.body, 11.5f, ink, false);
-        body.setMaxLines(2);
-        body.setEllipsize(TextUtils.TruncateAt.END);
-        body.setLineSpacing(0, 1.2f);
-        body.setPadding(0, dp(5), 0, 0);
-        row.addView(body);
 
         TextView state = text(msg.copied ? "电脑已复制" : "已收到，等待电脑确认",
                 9.5f, msg.copied ? mintDark : getColor(R.color.peach_dark), false);
@@ -967,29 +951,15 @@ public final class MainActivity extends Activity implements SyncService.Listener
                 // 忽略
             }
         }
-        String scope = notificationScopeLabel();
         notificationAccessLine.setText(granted
                 ? (connected
-                ? "通知读取（" + scope + "）：已开启 · 服务已连接"
-                : "通知读取（" + scope + "）：已开启 · 等待连接")
-                : "通知读取（" + scope + "）：未开启，点这里开启");
+                ? "通知读取（系统短信）：已开启 · 服务已连接"
+                : "通知读取（系统短信）：已开启 · 等待连接")
+                : "通知读取（系统短信）：未开启，点这里开启");
         notificationAccessLine.setTextColor(granted ? mintDark : danger);
-        if (scopeButton != null) {
-            scopeButton.setText(prefs.notifPackages().isEmpty()
-                    ? "选择读取通知的 App（系统短信始终读取）"
-                    : "选择读取通知的 App（已选 "
-                    + prefs.notifPackages().size() + " 个）");
-        }
         if (notificationAccessButton != null) {
             notificationAccessButton.setVisibility(granted ? View.GONE : View.VISIBLE);
         }
-    }
-
-    private String notificationScopeLabel() {
-        Set<String> selected = prefs.notifPackages();
-        return selected.isEmpty()
-                ? "系统短信始终读取"
-                : "系统短信始终读取 + " + selected.size() + " 个勾选的 App";
     }
 
     private void openNotificationAccess() {
@@ -1053,185 +1023,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
         }
     }
 
-    // ------------------------------------------------- 选择读取通知的 App
-
-    private void showAppPicker() {
-        PackageManager pm = getPackageManager();
-        List<String[]> pairs = new ArrayList<>();
-        for (ApplicationInfo info : pm.getInstalledApplications(0)) {
-            String pkg = info.packageName;
-            if (pkg == null || pkg.equals(getPackageName())) {
-                continue;
-            }
-            // 不能只按「有没有启动图标」过滤：很多机型的系统短信 App 恰好没有启动图标
-            // （比如 vivo 的 com.vivo.mms），会被过滤掉导致选不到。
-            // 收集规则：有启动图标 → 收；是系统短信 App（默认短信应用或已知短信包名）→ 也收。
-            boolean hasLauncher = pm.getLaunchIntentForPackage(pkg) != null;
-            boolean isSms = SmsNotificationListener.isSmsPackage(this, pkg);
-            if (!hasLauncher && !isSms) {
-                continue;
-            }
-            String label = pkg;
-            try {
-                CharSequence shown = pm.getApplicationLabel(info);
-                if (shown != null && shown.length() > 0) {
-                    label = shown.toString();
-                }
-            } catch (Exception ignored) {
-                // 拿不到名称时保留包名
-            }
-            if (isSms) {
-                label = label + "（系统短信）";
-            }
-            pairs.add(new String[]{label, pkg});
-        }
-        pairs.sort((a, b) -> a[0].compareToIgnoreCase(b[0]));
-
-        final List<String> allLabels = new ArrayList<>();
-        final List<String> allPkgs = new ArrayList<>();
-        for (String[] pair : pairs) {
-            allLabels.add(pair[0]);
-            allPkgs.add(pair[1]);
-        }
-
-        Set<String> checked = new LinkedHashSet<>(prefs.notifPackages());
-        // 系统短信始终在读取范围内，不需要默认勾选，也不要求用户勾选。
-
-        final List<String> labels = new ArrayList<>();
-        final List<String> pkgs = new ArrayList<>();
-        EditText search = field("搜索 App 名称，比如「信息」", InputType.TYPE_CLASS_TEXT);
-        TextView hint = text("已勾选 " + checked.size() + " 个",
-                10.5f, muted, false);
-        hint.setPadding(0, dp(8), 0, dp(4));
-        Runnable refreshHint = () -> hint.setText("已勾选 " + checked.size() + " 个");
-
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
-                android.R.layout.simple_list_item_1) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                AppRowView row = convertView instanceof AppRowView
-                        ? (AppRowView) convertView : new AppRowView();
-                row.label.setText(labels.get(position));
-                row.pkg.setText(pkgs.get(position));
-                row.check.setChecked(checked.contains(pkgs.get(position)));
-                return row;
-            }
-
-            @Override
-            public int getCount() {
-                return labels.size();
-            }
-
-            @Override
-            public String getItem(int position) {
-                return labels.get(position);
-            }
-
-            @Override
-            public long getItemId(int position) {
-                return position;
-            }
-        };
-
-        ListView list = new ListView(this);
-        list.setAdapter(adapter);
-        list.setDividerHeight(0);
-        list.setOnItemClickListener((parent, view, position, id) -> {
-            String pkg = pkgs.get(position);
-            if (checked.contains(pkg)) {
-                checked.remove(pkg);
-            } else {
-                checked.add(pkg);
-            }
-            refreshHint.run();
-            adapter.notifyDataSetChanged();
-        });
-
-        search.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence sequence, int start, int count,
-                    int after) {
-            }
-
-            @Override
-            public void onTextChanged(CharSequence sequence, int start, int before,
-                    int count) {
-                String key = sequence.toString().trim().toLowerCase();
-                labels.clear();
-                pkgs.clear();
-                for (int i = 0; i < allLabels.size(); i++) {
-                    String label = allLabels.get(i);
-                    String pkg = allPkgs.get(i);
-                    if (key.isEmpty() || label.toLowerCase().contains(key)
-                            || pkg.toLowerCase().contains(key)) {
-                        labels.add(label);
-                        pkgs.add(pkg);
-                    }
-                }
-                adapter.notifyDataSetChanged();
-                list.setSelection(0);
-            }
-
-            @Override
-            public void afterTextChanged(Editable sequence) {
-            }
-        });
-
-        TextView selectAll = text("全选当前结果", 10.5f, mintDark, true);
-        selectAll.setPadding(0, dp(4), 0, dp(8));
-        selectAll.setOnClickListener(v -> {
-            for (String pkg : pkgs) {
-                checked.add(pkg);
-            }
-            refreshHint.run();
-            adapter.notifyDataSetChanged();
-        });
-
-        LinearLayout body = new LinearLayout(this);
-        body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(16), dp(12), dp(16), dp(10));
-        body.addView(search);
-        body.addView(hint);
-        body.addView(selectAll);
-        body.addView(list, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(380)));
-
-        TextView githubLink = text("GitHub 开源仓库：github.com/wxhfywyovo/SmsBridge",
-                10f, mintDark, true);
-        githubLink.setGravity(Gravity.CENTER);
-        githubLink.setPadding(0, dp(10), 0, dp(2));
-        githubLink.setOnClickListener(v -> openGithub());
-        body.addView(githubLink);
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("选择读取通知的 App")
-                .setView(body)
-                .setPositiveButton("保存", null)
-                .setNegativeButton("取消", null)
-                .create();
-        dialog.show();
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String defaultSms = null;
-            try {
-                defaultSms = Telephony.Sms.getDefaultSmsPackage(this);
-            } catch (Exception ignored) {
-                // 忽略
-            }
-            boolean smsChecked = defaultSms != null && checked.contains(defaultSms);
-            prefs.setNotifPackages(checked);
-            dialog.dismiss();
-            updateNotificationAccessLine();
-            if (checked.isEmpty()) {
-                toast("已保存：一个都没选，只读取系统短信");
-            } else if (!smsChecked) {
-                // 系统短信永远在读取范围内，不需要勾选；这里提示避免用户误以为要勾。
-                toast("已保存，读取勾选的 " + checked.size()
-                        + " 个 App；系统短信始终会读取，不用勾选");
-            } else {
-                toast("已保存，只读取勾选的 " + checked.size() + " 个 App");
-            }
-        });
-    }
 
     private void showDiagnostics() {
         StringBuilder sb = new StringBuilder();
@@ -1255,8 +1046,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
                 ? "已开启" : "未开启").append('\n');
         sb.append("通知读取服务：").append(SmsNotificationListener.isConnected()
                 ? "已连接" : "未连接").append('\n');
-        sb.append("通知范围：").append(notificationScopeLabel())
-                .append("（勾选的 App 只有正文含验证码才同步）\n");
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         sb.append("电池优化：").append(pm != null
                 && pm.isIgnoringBatteryOptimizations(getPackageName())
@@ -1277,10 +1066,9 @@ public final class MainActivity extends Activity implements SyncService.Listener
             }
         }
         sb.append("\n收不到验证码怎么办：\n")
-                .append("1. 「通知读取」已开启且服务已连接；\n")
-                .append("2. 短信 App 不需要出现在「选择读取通知的 App」里（系统短信始终读取）；\n")
-                .append("3. 如果「收到短信」但没同步：查看下面的事件里是否有「丢弃通知」记录，\n")
-                .append("   那说明通知进来了但被跳过了，把事件复制出来给作者看。\n");
+                .append("1. 确认「通知读取」已开启且服务已连接；\n")
+                .append("2. 确认手机锁屏通知没有隐藏内容（设置里搜「锁屏通知」）；\n")
+                .append("3. 如果「收到短信」但没同步：检查电脑端是否已连接。\n");
         if (prefs.queue().size() > 0) {
             sb.append("4. 队列还有 " + prefs.queue().size() + " 条未发送：检查电脑是否已连接。\n");
         }
@@ -1306,55 +1094,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
             manager.setPrimaryClip(ClipData.newPlainText("SmsBridge 诊断", text));
             toast("诊断信息已复制");
         }
-    }
-
-    private void showSmsLog() {
-        String log = SmsLogger.read(this);
-        if (log.isEmpty()) {
-            log = "还没有短信日志。\n收到短信后，这里会记录完整正文。";
-        }
-        final String logText = log;
-        String header = "文件：" + SmsLogger.path(this)
-                + "\n（包含完整短信正文，排查后请点「清空」）\n\n";
-        TextView content = text(header + logText, 9.5f, ink, false);
-        content.setTypeface(Typeface.MONOSPACE);
-        content.setTextIsSelectable(true);
-        content.setPadding(dp(18), dp(8), dp(18), dp(8));
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(content);
-
-        new AlertDialog.Builder(this)
-                .setTitle("短信日志")
-                .setView(scroll)
-                .setPositiveButton("复制", (dialog, which) -> {
-                    ClipboardManager manager = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    if (manager != null) {
-                        manager.setPrimaryClip(ClipData.newPlainText("SmsBridge SMS 日志", logText));
-                        toast("短信日志已复制");
-                    }
-                })
-                .setNeutralButton("分享", (dialog, which) -> {
-                    Intent send = new Intent(Intent.ACTION_SEND)
-                            .setType("text/plain")
-                            .putExtra(Intent.EXTRA_SUBJECT, "SmsBridge 短信日志")
-                            .putExtra(Intent.EXTRA_TEXT, header + logText);
-                    suppressAutoHide = true;
-                    startActivity(Intent.createChooser(send, "分享短信日志"));
-                })
-                .setNegativeButton("清空", (dialog, which) -> confirmClearSmsLog())
-                .show();
-    }
-
-    private void confirmClearSmsLog() {
-        new AlertDialog.Builder(this)
-                .setTitle("清空短信日志？")
-                .setMessage("会删除包含完整短信正文的本地日志。")
-                .setNegativeButton("取消", null)
-                .setPositiveButton("清空", (dialog, which) -> {
-                    SmsLogger.clear(this);
-                    toast("短信日志已清空");
-                })
-                .show();
     }
 
     private void sendTestSms() {
@@ -1419,34 +1158,5 @@ public final class MainActivity extends Activity implements SyncService.Listener
 
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
-    }
-
-    /** 选择 App 列表的一行：勾选框 + 名称 + 包名。 */
-    private final class AppRowView extends LinearLayout {
-        final CheckBox check = new CheckBox(MainActivity.this);
-        final TextView label = text("", 13.5f, ink, false);
-        final TextView pkg = text("", 10f, muted, false);
-
-        AppRowView() {
-            super(MainActivity.this);
-            setOrientation(LinearLayout.HORIZONTAL);
-            setGravity(Gravity.CENTER_VERTICAL);
-            setPadding(dp(16), dp(10), dp(16), dp(10));
-            addView(check, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-            LinearLayout column = new LinearLayout(MainActivity.this);
-            column.setOrientation(LinearLayout.VERTICAL);
-            LinearLayout.LayoutParams colParams = new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            colParams.leftMargin = dp(12);
-            column.addView(label, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-            column.addView(pkg, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-            addView(column, colParams);
-        }
     }
 }
