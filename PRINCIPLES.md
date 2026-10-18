@@ -33,9 +33,7 @@ SmsBridge 解决一个很具体的问题：
 |---|---|
 | `MainActivity` | 界面、权限、配对、诊断、日志 |
 | `SyncService` | 前台服务：WebSocket 连接、队列、重连、保活 |
-| `SmsReceiver` | 接收 `SMS_RECEIVED` 广播 |
-| `SmsInboxReader` | 扫描 `content://sms` 兜底 |
-| `SmsNotificationListener` | 读取你勾选的 App 的通知 |
+| `SmsNotificationListener` | 读取系统短信 App 及你勾选的 App 的通知 |
 | `SmsCode` | 本地提取 4-8 位验证码 |
 | `Prefs` | 配对信息、设备 ID、队列、最近记录、事件 |
 | `Discovery` | UDP 发现电脑 |
@@ -47,15 +45,15 @@ SmsBridge 解决一个很具体的问题：
 
 按优先级：
 
-1. **短信广播**：系统收到 SMS 时发 `SMS_RECEIVED`，`SmsReceiver` 解析 `pdus`；
-2. **收件箱兜底**：部分 ROM 不把广播发给非默认短信应用，`SyncService` 用 `ContentObserver` + 30 秒轮询扫描 `content://sms`；
-3. **通知读取**：部分短信不在 SMS 数据库，只能从系统通知里读取；只读你勾选的 App；
-4. **手动诊断**：读取最新短信/扫描收件箱/查看日志。
+1. **通知读取**：系统收到短信时，系统短信 App 会在通知栏发出通知，
+   `SmsNotificationListener` 拦截并解析正文（支持 MessagingStyle 等格式）；
+   系统短信 App 始终在读取范围内，用户勾选的其他 App 只同步含验证码的通知；
+2. **手动诊断**：查看通知日志 / 诊断信息 / 日志。
 
 ### 2.2 去重
 
-- 短信广播、收件箱扫描、通知读取可能拿到同一条内容；
-- 手机端用 `Prefs.hasRecentContent` / `hasQueuedContent` 按“发件人 + 正文”在时间窗内去重；
+- 通知读取可能收到同一条消息（多条渠道 / 系统重发）；
+- 手机端用 `Prefs.hasRecentContent` / `hasQueuedContent` 按“发件人 + 正文”在短时间窗内去重；
 - 电脑端用消息 `id` 去重，`history.jsonl` 里已存在的 id 不会重复写。
 
 ### 2.3 验证码提取
@@ -251,10 +249,8 @@ Set-Clipboard -Value ...
 
 | 权限 | 原因 |
 |---|---|
-| `RECEIVE_SMS` | 接收短信广播 |
-| `READ_SMS` | 广播被拦截时扫描收件箱 |
-| `POST_NOTIFICATIONS` | 前台服务通知 |
-| 通知使用权 | 读取不在短信收件箱的通知 |
+| `POST_NOTIFICATIONS` | 前台服务通知 + Android 13 运行时 |
+| 通知使用权 | 读取短信 App 的通知 |
 | 电池优化白名单 | 锁屏后保持连接 |
 | 开机自启 | 重启后自动恢复 |
 

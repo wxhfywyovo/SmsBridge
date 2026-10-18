@@ -199,20 +199,6 @@ public final class Prefs {
         sp.edit().putString("notifPkgs", sb.toString()).apply();
     }
 
-    public synchronized long inboxSince() {
-        long since = sp.getLong("inboxSince", -1L);
-        if (since < 0) {
-            // 第一次开启兜底时只回看最近 1 小时，避免把历史短信全部同步过去
-            since = System.currentTimeMillis() - 60 * 60 * 1000L;
-            sp.edit().putLong("inboxSince", since).apply();
-        }
-        return since;
-    }
-
-    public void setInboxSince(long value) {
-        sp.edit().putLong("inboxSince", value).apply();
-    }
-
     public boolean hasPairing() {
         return !token().isEmpty() || !pin().isEmpty();
     }
@@ -268,7 +254,7 @@ public final class Prefs {
         return false;
     }
 
-    /** 通知兜底和短信广播可能拿到同一条内容，用“发件人+正文”在时间窗内去重。 */
+    /** 防止同一条通知被重复入队：用“发件人+正文”在很短的时间窗内去重。 */
     public synchronized boolean hasRecentContent(String from, String body, long windowMs) {
         long now = System.currentTimeMillis();
         for (Msg msg : readList("recent", MAX_RECENT)) {

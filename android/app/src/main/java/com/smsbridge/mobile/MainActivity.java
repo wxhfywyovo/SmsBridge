@@ -130,11 +130,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
         updateNotificationAccessLine();
         if (prefs.enabled()) {
             maybeRequestBatteryExemption();
-            if (checkSelfPermission(Manifest.permission.READ_SMS)
-                    == PackageManager.PERMISSION_GRANTED) {
-                // 通知已在运行的服务开启收件箱兜底
-                startAction(SyncService.ACTION_START);
-            }
         }
         // 还没配对时，电脑刚点过“复制配对信息”的话，打开 App 就自动读取并连接。
         if (!prefs.hasPairing()) {
@@ -194,7 +189,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         logLine = text("等待启动…", 10.5f, muted, false);
         logLine.setGravity(Gravity.CENTER);
         root.addView(logLine);
-        TextView footer = text("SmsBridge 1.3.4 · 数据只在局域网里传输", 10, muted, false);
+        TextView footer = text("SmsBridge 1.3.7 · 数据只在局域网里传输", 10, muted, false);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, dp(4), 0, 0);
         root.addView(footer);
@@ -312,12 +307,12 @@ public final class MainActivity extends Activity implements SyncService.Listener
         LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         permissionParams.topMargin = dp(10);
-        permissionText = text("没有短信权限，收到短信不会自动同步", 10.5f, danger, false);
+        permissionText = text("未开启通知读取，收不到短信", 10.5f, danger, false);
         permissionRow.addView(permissionText, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView grant = text("去开启", 11, mintDark, true);
         grant.setPadding(dp(8), dp(4), dp(4), dp(4));
-        grant.setOnClickListener(v -> requestRuntimePermissions());
+        grant.setOnClickListener(v -> openNotificationAccess());
         permissionRow.addView(grant);
         card.addView(permissionRow, permissionParams);
         return card;
@@ -399,20 +394,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
         diag.setOnClickListener(v -> showDiagnostics());
         card.addView(diag);
 
-        TextView scan = text("立即扫描短信收件箱", 10.5f, muted, false);
-        scan.setPadding(0, dp(8), 0, 0);
-        scan.setOnClickListener(v -> {
-            if (checkSelfPermission(Manifest.permission.READ_SMS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                toast("先允许「读取短信」，才能扫描收件箱");
-                requestRuntimePermissions();
-                return;
-            }
-            startAction(SyncService.ACTION_SCAN);
-            toast("正在扫描收件箱，稍后看诊断信息");
-        });
-        card.addView(scan);
-
         TextView flush = text("立即发送待同步短信", 10.5f, mintDark, true);
         flush.setPadding(0, dp(8), 0, 0);
         flush.setOnClickListener(v -> {
@@ -426,12 +407,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         smsLog.setOnClickListener(v -> showSmsLog());
         card.addView(smsLog);
 
-        TextView latest = text("读取最新一条短信（诊断）", 10.5f, mintDark, true);
-        latest.setPadding(0, dp(8), 0, 0);
-        latest.setOnClickListener(v -> probeLatestSms());
-        card.addView(latest);
-
-        notificationAccessLine = text("通知读取（只读勾选的 App，仅抓验证码）：检查中…",
+        notificationAccessLine = text("通知读取（系统短信始终读取；勾选的 App 只同步验证码）：检查中…",
                 10.5f, muted, false);
         notificationAccessLine.setPadding(0, dp(8), 0, 0);
         notificationAccessLine.setOnClickListener(v -> openNotificationAccess());
@@ -444,7 +420,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         scopeParams.topMargin = dp(8);
         card.addView(scopeButton, scopeParams);
 
-        notificationAccessButton = button("开启通知读取（通知兜底）", false);
+        notificationAccessButton = button("开启通知读取", false);
         notificationAccessButton.setOnClickListener(v -> openNotificationAccess());
         LinearLayout.LayoutParams notifButtonParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1000,7 +976,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         notificationAccessLine.setTextColor(granted ? mintDark : danger);
         if (scopeButton != null) {
             scopeButton.setText(prefs.notifPackages().isEmpty()
-                    ? "选择读取通知的 App（默认只读系统短信）"
+                    ? "选择读取通知的 App（系统短信始终读取）"
                     : "选择读取通知的 App（已选 "
                     + prefs.notifPackages().size() + " 个）");
         }
@@ -1011,7 +987,9 @@ public final class MainActivity extends Activity implements SyncService.Listener
 
     private String notificationScopeLabel() {
         Set<String> selected = prefs.notifPackages();
-        return selected.isEmpty() ? "默认只读系统短信" : "只读 " + selected.size() + " 个勾选的 App";
+        return selected.isEmpty()
+                ? "系统短信始终读取"
+                : "系统短信始终读取 + " + selected.size() + " 个勾选的 App";
     }
 
     private void openNotificationAccess() {
@@ -1085,7 +1063,12 @@ public final class MainActivity extends Activity implements SyncService.Listener
             if (pkg == null || pkg.equals(getPackageName())) {
                 continue;
             }
-            if (pm.getLaunchIntentForPackage(pkg) == null) {
+            // 不能只按「有没有启动图标」过滤：很多机型的系统短信 App 恰好没有启动图标
+            // （比如 vivo 的 com.vivo.mms），会被过滤掉导致选不到。
+            // 收集规则：有启动图标 → 收；是系统短信 App（默认短信应用或已知短信包名）→ 也收。
+            boolean hasLauncher = pm.getLaunchIntentForPackage(pkg) != null;
+            boolean isSms = SmsNotificationListener.isSmsPackage(this, pkg);
+            if (!hasLauncher && !isSms) {
                 continue;
             }
             String label = pkg;
@@ -1096,6 +1079,9 @@ public final class MainActivity extends Activity implements SyncService.Listener
                 }
             } catch (Exception ignored) {
                 // 拿不到名称时保留包名
+            }
+            if (isSms) {
+                label = label + "（系统短信）";
             }
             pairs.add(new String[]{label, pkg});
         }
@@ -1109,15 +1095,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         }
 
         Set<String> checked = new LinkedHashSet<>(prefs.notifPackages());
-        String defaultSms = null;
-        try {
-            defaultSms = Telephony.Sms.getDefaultSmsPackage(this);
-        } catch (Exception ignored) {
-            // 忽略
-        }
-        if (checked.isEmpty() && defaultSms != null) {
-            checked.add(defaultSms);
-        }
+        // 系统短信始终在读取范围内，不需要默认勾选，也不要求用户勾选。
 
         final List<String> labels = new ArrayList<>();
         final List<String> pkgs = new ArrayList<>();
@@ -1233,12 +1211,25 @@ public final class MainActivity extends Activity implements SyncService.Listener
                 .create();
         dialog.show();
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String defaultSms = null;
+            try {
+                defaultSms = Telephony.Sms.getDefaultSmsPackage(this);
+            } catch (Exception ignored) {
+                // 忽略
+            }
+            boolean smsChecked = defaultSms != null && checked.contains(defaultSms);
             prefs.setNotifPackages(checked);
             dialog.dismiss();
             updateNotificationAccessLine();
-            toast(checked.isEmpty()
-                    ? "已保存：一个都没选，默认只读系统短信"
-                    : "已保存，只读取勾选的 " + checked.size() + " 个 App");
+            if (checked.isEmpty()) {
+                toast("已保存：一个都没选，只读取系统短信");
+            } else if (!smsChecked) {
+                // 系统短信永远在读取范围内，不需要勾选；这里提示避免用户误以为要勾。
+                toast("已保存，读取勾选的 " + checked.size()
+                        + " 个 App；系统短信始终会读取，不用勾选");
+            } else {
+                toast("已保存，只读取勾选的 " + checked.size() + " 个 App");
+            }
         });
     }
 
@@ -1256,20 +1247,16 @@ public final class MainActivity extends Activity implements SyncService.Listener
             // 忽略
         }
         sb.append("待发送队列：").append(prefs.queue().size()).append(" 条\n");
-        sb.append("短信权限：").append(checkSelfPermission(Manifest.permission.RECEIVE_SMS)
-                == PackageManager.PERMISSION_GRANTED ? "已授予" : "未授予").append('\n');
-        sb.append("读取短信（收件箱兜底）：").append(checkSelfPermission(Manifest.permission.READ_SMS)
-                == PackageManager.PERMISSION_GRANTED ? "已授予" : "未授予").append('\n');
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             sb.append("通知权限：").append(checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                     == PackageManager.PERMISSION_GRANTED ? "已授予" : "未授予").append('\n');
         }
-        sb.append("通知读取（通知兜底）：").append(notificationAccessGranted()
+        sb.append("通知读取：").append(notificationAccessGranted()
                 ? "已开启" : "未开启").append('\n');
         sb.append("通知读取服务：").append(SmsNotificationListener.isConnected()
                 ? "已连接" : "未连接").append('\n');
         sb.append("通知范围：").append(notificationScopeLabel())
-                .append("（只有正文含验证码才同步）\n");
+                .append("（勾选的 App 只有正文含验证码才同步）\n");
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         sb.append("电池优化：").append(pm != null
                 && pm.isIgnoringBatteryOptimizations(getPackageName())
@@ -1289,10 +1276,14 @@ public final class MainActivity extends Activity implements SyncService.Listener
                 sb.append(event).append('\n');
             }
         }
-        sb.append("\n如果事件里没有「收到短信」：系统没把 SMS 广播给本应用。\n")
-                .append("常见原因：默认短信应用限制、ROM 的短信或后台限制、\n")
-                .append("安装后未在系统设置里允许「受限制的设置」。\n")
-                .append("如果只有「收到短信」但没有「同步成功」：检查电脑端是否已连接。");
+        sb.append("\n收不到验证码怎么办：\n")
+                .append("1. 「通知读取」已开启且服务已连接；\n")
+                .append("2. 短信 App 不需要出现在「选择读取通知的 App」里（系统短信始终读取）；\n")
+                .append("3. 如果「收到短信」但没同步：查看下面的事件里是否有「丢弃通知」记录，\n")
+                .append("   那说明通知进来了但被跳过了，把事件复制出来给作者看。\n");
+        if (prefs.queue().size() > 0) {
+            sb.append("4. 队列还有 " + prefs.queue().size() + " 条未发送：检查电脑是否已连接。\n");
+        }
 
         TextView content = text(sb.toString(), 11, ink, false);
         content.setTextIsSelectable(true);
@@ -1366,64 +1357,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
                 .show();
     }
 
-    /** 不限制时间窗口，直接探测收件箱最新一条，成功/失败都写日志并弹窗展示。 */
-    private void probeLatestSms() {
-        if (checkSelfPermission(Manifest.permission.READ_SMS)
-                != PackageManager.PERMISSION_GRANTED) {
-            toast("先允许「读取短信」");
-            requestRuntimePermissions();
-            return;
-        }
-        toast("正在读取最新短信…");
-        io.execute(() -> {
-            SmsInboxReader.Probe probe = SmsInboxReader.probeLatest(this);
-            SmsLogger.logProbe(this, probe);
-            prefs.addEvent("读取最新短信：" + probe.summary());
-            runOnUiThread(() -> showProbeResult(probe));
-        });
-    }
-
-    private void showProbeResult(SmsInboxReader.Probe probe) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("权限：").append(probe.permissionGranted ? "已授予" : "未授予").append('\n');
-        sb.append("Cursor 条数：").append(probe.cursorCount)
-                .append("，耗时：").append(probe.elapsedMs).append(" ms\n");
-        sb.append("rowId：").append(probe.rowId)
-                .append("，type：").append(probe.type).append('\n');
-        sb.append("列：").append(probe.columns).append('\n');
-        if (probe.error != null) {
-            sb.append("错误：").append(probe.error).append('\n');
-        }
-        if (probe.latest == null) {
-            sb.append("\n没有读到 SMS。\n")
-                    .append("如果权限、Cursor 都正常，可能是收件箱为空，或这条不是普通短信，")
-                    .append("不会出现在 content://sms/inbox。\n");
-        } else {
-            sb.append("\n发件人：").append(probe.latest.from).append('\n');
-            sb.append("时间：").append(formatTime(probe.latest.ts)).append('\n');
-            sb.append("验证码：").append(probe.latest.code == null
-                    ? "未识别" : probe.latest.code).append('\n');
-            sb.append("\n----- 完整正文 -----\n");
-            sb.append(probe.latest.body == null ? "" : probe.latest.body).append('\n');
-        }
-        sb.append("\n已写入 ").append(SmsLogger.path(this));
-
-        TextView content = text(sb.toString(), 11, ink, false);
-        content.setTypeface(Typeface.MONOSPACE);
-        content.setTextIsSelectable(true);
-        content.setPadding(dp(18), dp(8), dp(18), dp(8));
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(content);
-
-        new AlertDialog.Builder(this)
-                .setTitle("最新短信读取结果")
-                .setView(scroll)
-                .setPositiveButton("复制结果", (dialog, which) -> copyDiagnostic(sb.toString()))
-                .setNeutralButton("查看日志", (dialog, which) -> showSmsLog())
-                .setNegativeButton("关闭", null)
-                .show();
-    }
-
     private void sendTestSms() {
         if (!prefs.enabled()) {
             toast("先打开「后台常驻同步」");
@@ -1450,12 +1383,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
 
     private void requestRuntimePermissions() {
         List<String> needed = new ArrayList<>();
-        if (checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
-            needed.add(Manifest.permission.RECEIVE_SMS);
-        }
-        if (checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            needed.add(Manifest.permission.READ_SMS);
-        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -1474,15 +1401,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
         if (requestCode == REQ_PERMISSIONS) {
             suppressAutoHide = false;
             updatePermissionRow();
-            if (checkSelfPermission(Manifest.permission.RECEIVE_SMS)
-                    == PackageManager.PERMISSION_GRANTED) {
-                toast("短信权限已开启");
-            }
-            if (prefs.enabled()
-                    && checkSelfPermission(Manifest.permission.READ_SMS)
-                    == PackageManager.PERMISSION_GRANTED) {
-                startAction(SyncService.ACTION_START);
-            }
         }
     }
 
@@ -1490,18 +1408,13 @@ public final class MainActivity extends Activity implements SyncService.Listener
         if (permissionRow == null) {
             return;
         }
-        boolean receive = checkSelfPermission(Manifest.permission.RECEIVE_SMS)
-                == PackageManager.PERMISSION_GRANTED;
-        boolean read = checkSelfPermission(Manifest.permission.READ_SMS)
-                == PackageManager.PERMISSION_GRANTED;
-        if (receive && read) {
+        // 短信通过「通知读取」获取，这里检查的其实是通知使用权是否开启。
+        if (notificationAccessGranted()) {
             permissionRow.setVisibility(View.GONE);
             return;
         }
         permissionRow.setVisibility(View.VISIBLE);
-        permissionText.setText(receive
-                ? "建议允许「读取短信」：部分系统会拦截短信广播，开启后自动兜底"
-                : "没有短信权限，收到短信不会自动同步");
+        permissionText.setText("未开启通知读取，收不到短信");
     }
 
     private void toast(String message) {

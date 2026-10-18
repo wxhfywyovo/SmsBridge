@@ -1,25 +1,20 @@
 package com.smsbridge.mobile;
 
-import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
-import android.database.ContentObserver;
 import android.net.ConnectivityManager;
 import android.net.Network;
-import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
-import android.provider.Telephony;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
@@ -29,7 +24,6 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 常驻前台服务：维持和电脑的 WebSocket 连接。
@@ -41,7 +35,6 @@ public final class SyncService extends Service {
     public static final String ACTION_STOP = "com.smsbridge.mobile.STOP";
     public static final String ACTION_PAIR = "com.smsbridge.mobile.PAIR";
     public static final String ACTION_SMS = "com.smsbridge.mobile.SMS";
-    public static final String ACTION_SCAN = "com.smsbridge.mobile.SCAN";
     public static final String ACTION_FLUSH = "com.smsbridge.mobile.FLUSH";
 
     public static final String EXTRA_HOST = "host";
@@ -96,7 +89,7 @@ public final class SyncService extends Service {
         MAIN.post(() -> listener.onStatus(lastStatus));
     }
 
-    /** 短信广播先保存到本地时，把这条记录推给正在看的 App 界面。 */
+    /** 短信（通过通知读取获得）先保存到本地时，把这条记录推给正在看的 App 界面。 */
     public static void publishLocalSms(Prefs.Msg msg) {
         MAIN.post(() -> {
             for (Listener listener : LISTENERS) {
@@ -126,20 +119,7 @@ public final class SyncService extends Service {
     private PowerManager.WakeLock cpuWakeLock;
     private WifiManager.WifiLock wifiLock;
     private boolean foregroundStarted;
-    private final Handler inboxHandler = new Handler(Looper.getMainLooper());
-    private ExecutorService inboxExecutor;
-    private ContentObserver smsObserver;
-    private final AtomicBoolean inboxScanning = new AtomicBoolean(false);
-    private final Runnable inboxPoll = new Runnable() {
-        @Override
-        public void run() {
-            if (!running) {
-                return;
-            }
-            scanInbox("定时");
-            inboxHandler.postDelayed(this, 30_000);
-        }
-    };
+    private ExecutorService sendExecutor;
 
     @Override
     public void onCreate() {
@@ -150,12 +130,11 @@ public final class SyncService extends Service {
         startForegroundCompat("正在启动同步…", "保持和电脑的连接");
         running = true;
         acquireKeepAlive();
-        inboxExecutor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "smsbridge-inbox");
+        sendExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "smsbridge-send");
             t.setDaemon(true);
             return t;
         });
-        ensureInboxFallback();
         registerNetworkCallback();
         worker = new Thread(this::connectionLoop, "smsbridge-connection");
         worker.setDaemon(true);
@@ -191,7 +170,6 @@ public final class SyncService extends Service {
             pendingPin = pin;
             needUser = false;
             connectFailures = 0;
-            ensureInboxFallback();
             log("收到手动配对请求");
             wake();
             return START_STICKY;
@@ -204,17 +182,6 @@ public final class SyncService extends Service {
                 wake();
             }
             log("手动发送队列（" + count + " 条）");
-            return START_STICKY;
-        }
-        if (ACTION_SCAN.equals(action)) {
-            if (checkSelfPermission(Manifest.permission.READ_SMS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                log("手动扫描失败：没有读取短信权限");
-                return START_STICKY;
-            }
-            ensureInboxFallback();
-            scanInbox("手动");
-            log("手动扫描短信收件箱");
             return START_STICKY;
         }
         if (ACTION_SMS.equals(action)) {
@@ -247,7 +214,6 @@ public final class SyncService extends Service {
         }
         prefs.setEnabled(true);
         needUser = false;
-        ensureInboxFallback();
         wake();
         return START_STICKY;
     }
@@ -265,7 +231,10 @@ public final class SyncService extends Service {
             wakeLock.notifyAll();
         }
         unregisterNetworkCallback();
-        stopInboxFallback();
+        if (sendExecutor != null) {
+            sendExecutor.shutdownNow();
+            sendExecutor = null;
+        }
         if (worker != null) {
             worker.interrupt();
         }
@@ -284,7 +253,6 @@ public final class SyncService extends Service {
         synchronized (wakeLock) {
             wakeLock.notifyAll();
         }
-        stopInboxFallback();
         releaseKeepAlive();
         stopForeground(STOP_FOREGROUND_REMOVE);
         publishStopped();
@@ -464,7 +432,7 @@ public final class SyncService extends Service {
             wake();
             return;
         }
-        ExecutorService executor = inboxExecutor;
+        ExecutorService executor = sendExecutor;
         if (executor == null || executor.isShutdown()) {
             wake();
             return;
@@ -715,103 +683,6 @@ public final class SyncService extends Service {
             }
         }
         super.onTaskRemoved(rootIntent);
-    }
-
-    // ------------------------------------------------------------ inbox fallback
-
-    /** 如果 ROM 不给广播，就用 READ_SMS 监听/轮询收件箱兜底。 */
-    private void ensureInboxFallback() {
-        if (!running || inboxExecutor == null || smsObserver != null) {
-            return;
-        }
-        if (checkSelfPermission(Manifest.permission.READ_SMS)
-                != PackageManager.PERMISSION_GRANTED) {
-            return;
-        }
-        try {
-            smsObserver = new ContentObserver(inboxHandler) {
-                @Override
-                public void onChange(boolean selfChange) {
-                    scanInbox("收件箱变化");
-                }
-            };
-            getContentResolver().registerContentObserver(
-                    Telephony.Sms.CONTENT_URI, true, smsObserver);
-            inboxHandler.removeCallbacks(inboxPoll);
-            inboxHandler.postDelayed(inboxPoll, 2500);
-            log("短信收件箱兜底监听已开启");
-        } catch (Exception e) {
-            log("开启收件箱兜底失败：" + e.getClass().getSimpleName());
-        }
-    }
-
-    private void scanInbox(String reason) {
-        if (!running || inboxExecutor == null || inboxExecutor.isShutdown()) {
-            return;
-        }
-        if (!inboxScanning.compareAndSet(false, true)) {
-            return;
-        }
-        try {
-            inboxExecutor.execute(() -> {
-                try {
-                    long since = prefs.inboxSince();
-                    List<Prefs.Msg> messages = SmsInboxReader.readSince(this, since);
-                    long max = since;
-                    for (Prefs.Msg message : messages) {
-                        max = Math.max(max, message.ts);
-                        if (prefs.hasRecent(message.id) || prefs.hasQueued(message.id)) {
-                            continue;
-                        }
-                        prefs.addRecent(message);
-                        publishLocalSms(message);
-                        prefs.enqueue(message);
-                        SmsLogger.logSms(this, "inbox-scan", message,
-                                "since=" + since);
-                        log("收件箱兜底发现短信：" + message.from);
-                    }
-                    if (max > since) {
-                        prefs.setInboxSince(max);
-                    }
-                    if (messages.isEmpty() && "手动".equals(reason)) {
-                        log("收件箱没有新短信（已由广播处理的会跳过，这是正常的）");
-                    }
-                    if (!messages.isEmpty()) {
-                        WsClient ws = client;
-                        if (connectionReady && ws != null && ws.isOpen()) {
-                            try {
-                                flushQueue(ws);
-                            } catch (IOException e) {
-                                log("兜底短信发送失败：" + e.getClass().getSimpleName());
-                            }
-                        }
-                        wake();
-                    }
-                } catch (Exception e) {
-                    log("扫描收件箱失败：" + e.getClass().getSimpleName());
-                } finally {
-                    inboxScanning.set(false);
-                }
-            });
-        } catch (Exception e) {
-            inboxScanning.set(false);
-        }
-    }
-
-    private void stopInboxFallback() {
-        inboxHandler.removeCallbacks(inboxPoll);
-        if (smsObserver != null) {
-            try {
-                getContentResolver().unregisterContentObserver(smsObserver);
-            } catch (Exception ignored) {
-                // 忽略
-            }
-            smsObserver = null;
-        }
-        if (inboxExecutor != null) {
-            inboxExecutor.shutdownNow();
-            inboxExecutor = null;
-        }
     }
 
     // ------------------------------------------------------------ notification

@@ -64,41 +64,6 @@ public final class SmsLogger {
         }
     }
 
-    /** 记录一次“读取最新短信”的完整探测结果，包含 Cursor 元数据和短信原文。 */
-    public static synchronized void logProbe(Context context, SmsInboxReader.Probe probe) {
-        try {
-            StringBuilder sb = new StringBuilder();
-            sb.append('\n');
-            sb.append('[').append(now()).append("][latest-probe]\n");
-            sb.append("permissionGranted=").append(probe.permissionGranted)
-                    .append(" cursorCount=").append(probe.cursorCount)
-                    .append(" elapsedMs=").append(probe.elapsedMs)
-                    .append(" rowId=").append(probe.rowId)
-                    .append(" type=").append(probe.type).append('\n');
-            sb.append("columns=").append(probe.columns).append('\n');
-            if (probe.error != null) {
-                sb.append("error=").append(probe.error).append('\n');
-            }
-            if (probe.latest != null) {
-                sb.append("from=").append(safe(probe.latest.from))
-                        .append(" code=").append(safe(probe.latest.code))
-                        .append(" id=").append(safe(probe.latest.id))
-                        .append(" ts=").append(probe.latest.ts)
-                        .append(" len=").append(probe.latest.body == null
-                                ? 0 : probe.latest.body.length())
-                        .append('\n');
-                sb.append("----- LATEST SMS BODY BEGIN -----\n");
-                sb.append(probe.latest.body == null ? "" : probe.latest.body);
-                sb.append("\n----- LATEST SMS BODY END -----\n");
-            } else {
-                sb.append("latest=null\n");
-            }
-            append(context, sb.toString());
-        } catch (Throwable ignored) {
-            // 日志失败不影响探测
-        }
-    }
-
     public static synchronized String read(Context context) {
         try {
             File file = file(context);
