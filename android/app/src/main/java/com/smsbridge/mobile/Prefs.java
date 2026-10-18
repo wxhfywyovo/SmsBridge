@@ -59,6 +59,7 @@ public final class Prefs {
     private static final String NAME = "smsbridge";
     private static final int MAX_QUEUE = 50;
     private static final int MAX_RECENT = 30;
+    private static final int MAX_HANDLED_NOTIFS = 200;
 
     private final SharedPreferences sp;
 
@@ -225,6 +226,56 @@ public final class Prefs {
         return false;
     }
 
+    /**
+     * 记住已经上报过的通知（通知 key + 正文指纹）。
+     *
+     * 通知读取服务每次重连都会把通知栏里还挂着的通知再扫一遍，短信 App 也会反复重发同一条通知，
+     * 没有这条记录同一封短信就会被重复上报。返回 true 表示这条通知还没处理过。
+     */
+    public synchronized boolean markNotifHandled(String key, String fingerprint, long windowMs) {
+        long now = System.currentTimeMillis();
+        List<String> kept = new ArrayList<>();
+        boolean duplicate = false;
+        String raw = sp.getString("handledNotifs", "");
+        if (!raw.isEmpty()) {
+            for (String line : raw.split("\n")) {
+                String[] parts = line.split("\u0001");
+                if (parts.length != 3) {
+                    continue;
+                }
+                long ts;
+                try {
+                    ts = Long.parseLong(parts[0]);
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                if (now - ts > windowMs) {
+                    continue;
+                }
+                kept.add(line);
+                if (parts[1].equals(key) && parts[2].equals(fingerprint)) {
+                    duplicate = true;
+                }
+            }
+        }
+        if (duplicate) {
+            return false;
+        }
+        kept.add(now + "\u0001" + key + "\u0001" + fingerprint);
+        while (kept.size() > MAX_HANDLED_NOTIFS) {
+            kept.remove(0);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String line : kept) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(line);
+        }
+        sp.edit().putString("handledNotifs", sb.toString()).apply();
+        return true;
+    }
+
     /** 防止同一条通知被重复入队：用“发件人+正文”在很短的时间窗内去重。 */
     public synchronized boolean hasRecentContent(String from, String body, long windowMs) {
         long now = System.currentTimeMillis();
@@ -246,6 +297,31 @@ public final class Prefs {
                 continue;
             }
             if (same(msg.from, from) && same(msg.body, body)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 同一发件人 + 同一个验证码在窗口内已经上报过，就按重复处理。 */
+    public synchronized boolean hasRecentCode(String from, String code, long windowMs) {
+        if (code == null || code.isEmpty()) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        for (Msg msg : readList("recent", MAX_RECENT)) {
+            if (Math.abs(now - msg.ts) > windowMs) {
+                continue;
+            }
+            if (same(msg.from, from) && code.equals(msg.code)) {
+                return true;
+            }
+        }
+        for (Msg msg : readList("queue", MAX_QUEUE)) {
+            if (Math.abs(now - msg.ts) > windowMs) {
+                continue;
+            }
+            if (same(msg.from, from) && code.equals(msg.code)) {
                 return true;
             }
         }

@@ -18,6 +18,12 @@ import android.service.notification.StatusBarNotification;
 public final class SmsNotificationListener extends NotificationListenerService {
     /** 去重窗口：只用来防止同一条通知（系统重发/多条渠道）被重复入队。 */
     private static final long DEDUP_WINDOW_MS = 90 * 1000L;
+    /** 同一条通知（key + 正文完全相同）在这段时间内只上报一次，跨进程重启也有效。 */
+    private static final long HANDLED_WINDOW_MS = 3 * 60 * 1000L;
+    /** 同一个发件人 + 同一个验证码，在这段时间内只上报一次。 */
+    private static final long CODE_DEDUP_WINDOW_MS = 2 * 60 * 1000L;
+    /** 刚连上时只补扫最近 1 分钟内发出的通知，避免把通知栏里的旧短信再上报一遍。 */
+    private static final long ATTACH_SCAN_MS = 60 * 1000L;
     private static volatile boolean connected;
 
     public static boolean isConnected() {
@@ -32,7 +38,12 @@ public final class SmsNotificationListener extends NotificationListenerService {
         try {
             StatusBarNotification[] active = getActiveNotifications();
             if (active != null) {
+                long now = System.currentTimeMillis();
                 for (StatusBarNotification sbn : active) {
+                    // 只补扫刚发出来的，通知栏里挂着的旧短信不再重复上报
+                    if (sbn == null || now - sbn.getPostTime() > ATTACH_SCAN_MS) {
+                        continue;
+                    }
                     handleNotification(sbn);
                 }
             }
@@ -119,15 +130,25 @@ public final class SmsNotificationListener extends NotificationListenerService {
         }
 
         Prefs prefs = Prefs.get(this);
+        // 同一条通知（key + 正文都相同）短期内只上报一次：
+        // 短信 App 会反复重发通知，通知读取服务重连时也会把还在通知栏里的通知再扫一遍。
+        String notifKey = sbn.getKey() == null ? "" : sbn.getKey();
+        String fingerprint = Integer.toHexString((pkg + "|" + title + "|" + body).hashCode());
+        if (!prefs.markNotifHandled(notifKey, fingerprint, HANDLED_WINDOW_MS)) {
+            return;
+        }
         String code = SmsCode.extract(body);
         long ts = sbn.getPostTime() > 0 ? sbn.getPostTime() : System.currentTimeMillis();
-        String id = "notif-" + ts + "-"
-                + Integer.toHexString((pkg + "|" + title + "|" + body).hashCode());
+        String id = "notif-" + ts + "-" + fingerprint;
         Prefs.Msg msg = new Prefs.Msg(id, title, body, code, ts, false);
 
-        // 防止同一条通知被重复入队；窗口很短，隔几分钟重发的同文验证码不会丢。
+        // 第二层：同一条内容在队列/历史里刚出现过也跳过（防跨 key 的重复通知）。
         if (prefs.hasRecentContent(title, body, DEDUP_WINDOW_MS)
                 || prefs.hasQueuedContent(title, body, DEDUP_WINDOW_MS)) {
+            return;
+        }
+        // 第三层：正文里夹了「未读 X 条」之类变动文字时，用验证码本身判重。
+        if (prefs.hasRecentCode(title, code, CODE_DEDUP_WINDOW_MS)) {
             return;
         }
         prefs.addRecent(msg);

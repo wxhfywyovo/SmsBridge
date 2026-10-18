@@ -50,6 +50,8 @@ import java.util.concurrent.Executors;
 /** 圆润可爱风的手机端主界面。 */
 public final class MainActivity extends Activity implements SyncService.Listener {
     private static final int REQ_PERMISSIONS = 101;
+    /** 重绑通知读取服务的最小间隔，避免每次刷新都重绑导致通知被反复上报。 */
+    private static final long REBIND_INTERVAL_MS = 30 * 1000L;
     private static final String GITHUB_URL = "https://github.com/wxhfywyovo/SmsBridge";
 
     private Prefs prefs;
@@ -63,6 +65,8 @@ public final class MainActivity extends Activity implements SyncService.Listener
     private LinearLayout permissionRow;
     private TextView notificationAccessLine;
     private Button notificationAccessButton;
+    /** 重绑通知读取服务的限频时间戳（毫秒）。 */
+    private long lastNotificationRebind;
     private EditText hostField;
     private EditText portField;
     private EditText pinField;
@@ -188,7 +192,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         logLine = text("等待启动…", 10.5f, muted, false);
         logLine.setGravity(Gravity.CENTER);
         root.addView(logLine);
-        TextView footer = text("SmsBridge 1.3.13 · 数据只在局域网里传输", 10, muted, false);
+        TextView footer = text("SmsBridge 1.3.14 · 数据只在局域网里传输", 10, muted, false);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, dp(4), 0, 0);
         root.addView(footer);
@@ -943,7 +947,10 @@ public final class MainActivity extends Activity implements SyncService.Listener
         }
         boolean granted = notificationAccessGranted();
         boolean connected = SmsNotificationListener.isConnected();
-        if (granted) {
+        // 只在没连上时重绑，并且限频：每次重绑都会让服务重新扫一遍通知栏。
+        long now = System.currentTimeMillis();
+        if (granted && !connected && now - lastNotificationRebind > REBIND_INTERVAL_MS) {
+            lastNotificationRebind = now;
             try {
                 SmsNotificationListener.requestRebind(
                         new ComponentName(this, SmsNotificationListener.class));
