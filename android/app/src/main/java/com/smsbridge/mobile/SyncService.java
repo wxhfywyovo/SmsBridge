@@ -98,9 +98,21 @@ public final class SyncService extends Service {
         });
     }
 
+    /** 只更新通知/状态，不入队也不同步（例如通知里没有正文时提示一下）。 */
+    public static void publishHint(String title, String detail) {
+        SyncService service = INSTANCE;
+        if (service == null) {
+            return;
+        }
+        Status current = lastStatus;
+        service.setStatus(current == null ? State.IDLE : current.state, title, detail);
+    }
+
     public static void removeListener(Listener listener) {
         LISTENERS.remove(listener);
     }
+
+    private static volatile SyncService INSTANCE;
 
     private Prefs prefs;
     private volatile boolean running;
@@ -124,6 +136,7 @@ public final class SyncService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        INSTANCE = this;
         prefs = Prefs.get(this);
         notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         createChannel();
@@ -224,6 +237,9 @@ public final class SyncService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        if (INSTANCE == this) {
+            INSTANCE = null;
+        }
         closeClient();
         synchronized (wakeLock) {
             wakeLock.notifyAll();

@@ -64,6 +64,10 @@ public final class SmsNotificationListener extends NotificationListenerService {
             return;
         }
         Notification notification = sbn.getNotification();
+        // 分组汇总通知（「短信 · 今天」这种）本身不带正文，真正的消息在子通知里，跳过。
+        if ((notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0) {
+            return;
+        }
         Bundle extras = notification.extras;
         if (extras == null) {
             return;
@@ -85,6 +89,12 @@ public final class SmsNotificationListener extends NotificationListenerService {
         if (body.isEmpty()) {
             body = textArray(extras.getCharSequenceArray(Notification.EXTRA_REMOTE_INPUT_HISTORY));
         }
+        if (body.isEmpty()) {
+            body = text(extras.getCharSequence(Notification.EXTRA_TITLE_BIG));
+        }
+        if (body.isEmpty() && notification.tickerText != null) {
+            body = text(notification.tickerText);
+        }
         String sub = text(extras.getCharSequence(Notification.EXTRA_SUB_TEXT));
 
         // vivo 等部分机型把短信正文塞进标题，格式「发件人∣正文」，拆出来当正文用。
@@ -98,8 +108,11 @@ public final class SmsNotificationListener extends NotificationListenerService {
             body = body.isEmpty() ? sub : body + " " + sub;
         }
         if (body.isEmpty()) {
-            // 锁屏隐藏敏感内容等场景拿不到正文，仍然提示有一条短信到达。
-            body = "（短信正文被系统隐藏，请在系统设置里允许该短信 App 显示完整通知）";
+            // 通知里确实没有正文（锁屏隐藏内容 / 只推空壳通知）：
+            // 不同步到电脑，避免把占位文字写进剪贴板；只在手机上提示一次。
+            SyncService.publishHint("这条短信没有正文",
+                    "短信 App 的通知里没有内容，请在系统设置里允许它显示通知内容");
+            return;
         }
         if (title.isEmpty()) {
             title = "短信";
