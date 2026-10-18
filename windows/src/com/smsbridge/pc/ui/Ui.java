@@ -991,13 +991,24 @@ public final class Ui implements BridgeService.Listener {
             prependHistory(entry);
             lastMessageAt = System.currentTimeMillis();
             String message = entry.code() != null ? "验证码 " + entry.code() + " 已复制"
-                    : "新短信已复制";
+                    : "短信已复制";
             showToast(message);
             if (trayIcon != null && (!frame.isVisible() || !frame.isActive())) {
+                // 通知里直接显示短信内容，不再只提示「新短信 / 已复制到剪贴板」
+                String title;
+                if (!entry.copied()) {
+                    title = entry.code() != null ? "复制失败 · 验证码 " + entry.code() : "复制失败";
+                } else {
+                    title = entry.code() != null ? "验证码 " + entry.code() : "新短信";
+                }
+                String body = entry.body() == null ? "" : entry.body().trim();
+                if (body.isEmpty()) {
+                    body = entry.from() == null || entry.from().isBlank() ? "（无正文）" : entry.from();
+                } else if (body.length() > 160) {
+                    body = body.substring(0, 160) + "…";
+                }
                 try {
-                    trayIcon.displayMessage(entry.code() != null ? "验证码 " + entry.code() : "新短信",
-                            entry.from() + " · " + (entry.copied() ? "已复制到剪贴板" : "复制失败"),
-                            TrayIcon.MessageType.INFO);
+                    trayIcon.displayMessage(title, body, TrayIcon.MessageType.INFO);
                 } catch (RuntimeException ignored) {
                     // 通知失败忽略
                 }

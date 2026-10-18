@@ -205,7 +205,7 @@ public final class SyncService extends Service {
                     return START_STICKY;
                 }
                 setStatus(connectionReady ? State.ONLINE : State.CONNECTING,
-                        "收到新短信", "正在同步到电脑…");
+                        smsTitle(msg.code), body);
                 flushQueueAsync();
             }
             return START_STICKY;
@@ -507,7 +507,8 @@ public final class SyncService extends Service {
             prefs.addRecent(recent);
             publishRecent(recent);
             String summary = code.isEmpty() ? "短信已同步" : "验证码 " + code + " 已复制";
-            setStatus(State.ONLINE, "已连接 · " + prefs.pcName(), summary);
+            setStatus(State.ONLINE, smsTitle(code),
+                    original.body == null ? summary : original.body.trim());
             log("同步成功：" + summary);
         }
     }
@@ -757,6 +758,11 @@ public final class SyncService extends Service {
             }
         });
         updateNotification(status);
+    }
+
+    /** 通知标题：有验证码就显示验证码，没有就显示发件人。 */
+    private static String smsTitle(String code) {
+        return code == null || code.isEmpty() ? "新短信" : "验证码 " + code;
     }
 
     private void publishRecent(Prefs.Msg msg) {

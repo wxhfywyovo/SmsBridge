@@ -188,7 +188,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         logLine = text("等待启动…", 10.5f, muted, false);
         logLine.setGravity(Gravity.CENTER);
         root.addView(logLine);
-        TextView footer = text("SmsBridge 1.3.11 · 数据只在局域网里传输", 10, muted, false);
+        TextView footer = text("SmsBridge 1.3.12 · 数据只在局域网里传输", 10, muted, false);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, dp(4), 0, 0);
         root.addView(footer);

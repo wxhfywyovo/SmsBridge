@@ -55,7 +55,7 @@ release/      打包后的 APK + Windows 压缩包 + 发布 zip
 
 ### 安卓
 
-安装 `release/SmsBridge.apk`（Android 8.0+，当前 1.3.11 / versionCode 28）。
+安装 `release/SmsBridge.apk`（Android 8.0+，当前 1.3.12 / versionCode 29）。
 
 首次需要授予：
 
@@ -65,7 +65,7 @@ release/      打包后的 APK + Windows 压缩包 + 发布 zip
 
 ### Windows
 
-解压 `release/SmsBridge-release-1.3.11.zip`，里面包含：
+解压 `release/SmsBridge-release-1.3.12.zip`，里面包含：
 
 ```text
 SmsBridge.apk

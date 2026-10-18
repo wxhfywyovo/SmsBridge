@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Package
 )
 
@@ -36,11 +36,13 @@ if ($Package) {
     Remove-Item -Recurse -Force $appOut -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $appOut | Out-Null
     $icon = Join-Path $root "assets\SmsBridge.ico"
+    # 说明文字用码点拼出来，避免脚本文件编码在不同 PowerShell 下被误读成乱码
+    $desc = [string]([char]0x77ED) + [char]0x4FE1 + [char]0x5C0F + [char]0x6865
     & jpackage --type app-image --name SmsBridge --app-version 1.0.0 `
         --input $staging --main-jar SmsBridge.jar `
         --main-class com.smsbridge.pc.Main `
         --icon $icon --dest $appOut `
-        --vendor "SmsBridge" --description "LAN SMS to PC clipboard bridge" `
+        --vendor "SmsBridge" --description $desc `
         --java-options "-Dfile.encoding=UTF-8"
     if ($LASTEXITCODE -ne 0) {
         throw "jpackage failed"
