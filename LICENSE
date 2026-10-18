@@ -1,0 +1,74 @@
+SmsBridge Non-Commercial License 1.0
+短信小桥 非商业使用许可 1.0
+
+Copyright (c) 2026 SmsBridge Authors
+
+一、许可范围
+
+在遵守本许可全部条款的前提下，任何人都可以免费：
+
+1. 复制、运行本软件；
+2. 修改本软件并制作衍生作品；
+3. 在非商业场景下分发本软件或衍生作品，但必须保留本许可证、版权声明和免责声明。
+
+二、禁止商业用途
+
+未经版权所有者事先书面许可，禁止将本软件及其衍生作品用于任何商业目的，包括但不限于：
+
+1. 销售、出租、付费下载、付费安装、付费服务；
+2. 捆绑进商业硬件、商业软件、商业服务或商业解决方案；
+3. 用于企业内部生产经营、收费运维、收费技术支持；
+4. 以本软件为基础提供收费的短信转发、验证码转发、远程协助等服务；
+5. 通过本软件直接或间接获取商业利益。
+
+个人使用、学习、研究、非商业开源项目使用不受限制。
+
+三、禁止后门与恶意代码
+
+禁止在本软件及其衍生作品中植入或传播：
+
+1. 后门、木马、病毒、蠕虫、勒索软件；
+2. 未经用户明确知情同意的远程控制、静默执行、权限提升；
+3. 静默上传短信、通讯录、位置、剪贴板、账号等敏感数据；
+4. 任何规避用户授权、绕过系统安全机制、隐藏恶意行为的代码。
+
+本仓库原始代码不包含上述内容。任何第三方修改版若加入上述内容，均与本仓库作者无关，并违反本许可。
+
+四、隐私与数据
+
+本软件的设计目标是把短信内容从用户手机发送到用户自己配对的电脑，不经过作者控制的服务器。  
+用户应自行保护手机、电脑、局域网和日志文件的安全。
+
+五、免责声明
+
+本软件按“现状”提供，不提供任何明示或默示担保，包括但不限于适销性、特定用途适用性和不侵权担保。  
+在适用法律允许的最大范围内，作者不对因使用或无法使用本软件造成的任何直接、间接、偶然、特殊或后果性损失承担责任。
+
+六、许可终止
+
+违反本许可任何条款的，本许可自动终止。终止后应立即停止使用和分发本软件及其衍生作品。
+
+七、其他
+
+本许可不授予商标使用权。  
+如本许可的中文与英文版本冲突，以中文版本为准。
+
+---
+
+SmsBridge Non-Commercial License 1.0 (English summary)
+
+Permission is granted to use, copy, modify, and distribute this software for
+non-commercial purposes only, provided that this license and copyright notice
+are retained.
+
+Commercial use is prohibited without prior written permission, including
+selling, paid distribution, bundling into commercial products or services, and
+providing paid services based on this software.
+
+Adding backdoors, malware, remote control, silent data exfiltration, or any
+code that bypasses user consent is strictly prohibited.
+
+The software is provided "AS IS", without warranty of any kind. The authors are
+not liable for any damages arising from its use.
+
+This license terminates automatically upon violation.

@@ -1,0 +1,26 @@
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+*.hprof
+
+# Windows
+windows/build/
+windows/.idea/
+dist/
+*.class
+*.jar
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 发布包中的二进制需要提交，所以不忽略 release/
+!release/*.apk
+!release/*.zip

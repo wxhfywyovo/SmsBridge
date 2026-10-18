@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_top">#FFF8F4</color>
+    <color name="bg_bottom">#EEF7FF</color>
+    <color name="ink">#4C4459</color>
+    <color name="muted">#958DA6</color>
+    <color name="mint">#8FDFCC</color>
+    <color name="mint_dark">#2FAF96</color>
+    <color name="mint_soft">#E4F8F3</color>
+    <color name="peach">#FFC3AF</color>
+    <color name="peach_dark">#F08A6B</color>
+    <color name="peach_soft">#FFF0EA</color>
+    <color name="lavender">#C9BCFF</color>
+    <color name="lavender_soft">#F2EEFF</color>
+    <color name="card">#FFFFFDFC</color>
+    <color name="card_soft">#FFF7F2</color>
+    <color name="line">#F0E7F0</color>
+    <color name="danger">#E8746B</color>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">短信小桥</string>
+    <string name="app_subtitle">SmsBridge · 只走局域网</string>
+    <string name="notification_channel">短信同步</string>
+    <string name="notification_channel_desc">保持和电脑的连接，接收短信后自动同步</string>
+</resources>
