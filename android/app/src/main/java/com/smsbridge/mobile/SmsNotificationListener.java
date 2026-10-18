@@ -100,6 +100,10 @@ public final class SmsNotificationListener extends NotificationListenerService {
         }
         String sub = text(extras.getCharSequence(Notification.EXTRA_SUB_TEXT));
 
+        // 调试日志：无论后续如何处理，都记一条「收到通知」事件。
+        // 这让「找不到短信」时能判断：是通知没到，还是卡在哪个环节。
+        SmsLogger.event(this, "收到通知 pkg=" + pkg + " title=" + title + " source=" + source);
+
         Prefs prefs = Prefs.get(this);
         // 系统短信永远在读取范围内，不受勾选影响；勾选的其他 App 才按列表过滤。
         Set<String> selected = prefs.notifPackages();
