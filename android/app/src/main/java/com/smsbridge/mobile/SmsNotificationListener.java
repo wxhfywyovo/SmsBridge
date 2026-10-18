@@ -8,13 +8,13 @@ import android.os.Parcelable;
 import android.provider.Telephony;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
+import java.util.Set;
 
 /**
  * 通知读取兜底。
  *
- * 夸克/深度求索这类“应用号/智能短信/RCS”消息可能只存在于厂商自己的数据库，
- * 不会出现在 content://sms/inbox。只要用户开启“通知使用权”，就能从默认短信
- * 应用的通知里拿到标题和完整正文，再走同一条同步链路。
+ * 有些消息可能只存在于厂商自己的数据库，不会出现在 content://sms/inbox。
+ * 只要用户开启「通知使用权」，就能从通知里拿到标题和完整正文，再走同一条同步链路。
  */
 public final class SmsNotificationListener extends NotificationListenerService {
     private static final long DEDUP_WINDOW_MS = 10 * 60 * 1000L;
@@ -93,31 +93,31 @@ public final class SmsNotificationListener extends NotificationListenerService {
             title = "通知消息";
         }
 
-        // QQ / 微信黑名单：按包名 + 标题双重识别，命中就不同步（也不写入短信日志）。
-        if (isBlockedSocial(pkg, title)) {
-            Prefs prefsBlocked = Prefs.get(this);
-            prefsBlocked.addEvent("已拦截 QQ/微信通知（不同步）：" + title);
-            SmsLogger.event(this, "blocked-qq-wechat pkg=" + pkg
+        Prefs prefs = Prefs.get(this);
+
+        // 读取范围完全由用户在 App 里勾选；勾选 QQ / 微信后同样会同步。
+        Set<String> selected = prefs.notifPackages();
+        boolean inScope = selected.isEmpty() ? isSmsPackage(pkg) : selected.contains(pkg);
+        if (!inScope) {
+            SmsLogger.event(this, "跳过通知（未在读取列表）pkg=" + pkg
                     + " title=" + title + " source=" + source);
             return;
         }
 
         String code = SmsCode.extract(body);
         boolean likelyCode = code != null
-                || body.matches("(?s).*(验证码|校验码|动态码|确认码|verification code|"
-                + "passcode|\\botp\\b|認証番号|確認コード|認証コード).*");
-        boolean smsPackage = isSmsPackage(pkg);
+                || body.matches("(?s).*(验证码|校验码|动态码|确认码|激活码|安全码|提取码|代码|"
+                + "verification code|passcode|\\botp\\b|認証番号|確認コード|認証コード).*");
 
         long ts = sbn.getPostTime() > 0 ? sbn.getPostTime() : System.currentTimeMillis();
         String id = "notif-" + ts + "-"
                 + Integer.toHexString((pkg + "|" + title + "|" + body).hashCode());
         Prefs.Msg msg = new Prefs.Msg(id, title, body, code, ts, false);
 
-        // 白名单已取消：所有 App 的通知正文都写日志，便于确认消息到底有没有通知。
+        // 只记录用户勾选的 App，避免把别的应用的通知正文写进日志。
         SmsLogger.logSms(this, "notification", msg,
                 "pkg=" + pkg + " source=" + source + " likelyCode=" + likelyCode);
-        Prefs prefs = Prefs.get(this);
-        if (smsPackage || likelyCode) {
+        if (likelyCode) {
             prefs.addEvent("通知读取：" + title + "，pkg=" + pkg + "，"
                     + body.length() + " 字" + (code == null ? "" : "，验证码 " + code));
         }
@@ -172,30 +172,6 @@ public final class SmsNotificationListener extends NotificationListenerService {
             default:
                 return false;
         }
-    }
-
-    /** QQ / 微信黑名单：包名优先，标题兜底（有的群名并不含“QQ/微信”字样）。 */
-    private static boolean isBlockedSocial(String pkg, String title) {
-        if (pkg != null) {
-            switch (pkg) {
-                case "com.tencent.mobileqq":
-                case "com.tencent.tim":
-                case "com.tencent.mm":
-                case "com.tencent.mm.plugin.notify":
-                    return true;
-                default:
-                    break;
-            }
-        }
-        if (title != null) {
-            String lower = title.toLowerCase();
-            return lower.contains("qq")
-                    || lower.contains("微信")
-                    || lower.contains("wechat")
-                    || lower.contains("weixin")
-                    || lower.contains("tim");
-        }
-        return false;
     }
 
     private static String text(CharSequence value) {

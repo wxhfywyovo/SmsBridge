@@ -5,8 +5,10 @@ import java.util.regex.Pattern;
 
 /** 手机端只做轻量识别，用于在本地列表里先显示验证码；最终以电脑端识别为准。 */
 public final class SmsCode {
+    // “代码”覆盖微软的“验证代码 / 安全代码 / 确认代码”，不只是“验证码”。
     private static final Pattern KEY = Pattern.compile(
             "(验证码|校验码|动态码|确认码|激活码|安全码|提取码|口令|"
+                    + "代码|认证码|动态口令|"
                     + "認証番号|確認コード|認証コード|code|verification code|passcode|otp)"
                     + "[^0-9]{0,24}(\\d{4,8})",
             Pattern.CASE_INSENSITIVE);

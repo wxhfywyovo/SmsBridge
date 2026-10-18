@@ -49,7 +49,7 @@ public final class SmsInboxReader {
                 return "查询失败：" + error;
             }
             if (latest == null) {
-                return "收件箱为空（或没有 SMS，可能是 RCS/网络短信）";
+                return "收件箱为空（或没有 SMS）";
             }
             return "读取成功：" + latest.from + " · " + latest.body.length() + " 字";
         }
@@ -106,7 +106,7 @@ public final class SmsInboxReader {
 
     /**
      * 直接读取收件箱最新一条，不限制时间，用来判断到底能不能读 SMS Provider。
-     * 失败信息会原样返回，方便区分“权限被拒 / ROM 拦截 / Cursor 为空 / RCS 不在收件箱”。
+     * 失败信息会原样返回，方便区分“权限被拒 / ROM 拦截 / Cursor 为空 / 不在收件箱”。
      */
     public static Probe probeLatest(Context context) {
         long started = System.currentTimeMillis();
@@ -125,7 +125,7 @@ public final class SmsInboxReader {
         int type = -1;
         try {
             // 查整个 content://sms，而不是只查 inbox：
-            // 有些 ROM 会把应用号/智能短信放在非 type=1 的记录里。
+            // 有些 ROM 会把短信放在非 type=1 的记录里。
             cursor = context.getContentResolver().query(
                     Telephony.Sms.CONTENT_URI,
                     new String[]{"_id", "address", "body", "date", "type"},

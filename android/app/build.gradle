@@ -10,8 +10,8 @@ android {
         applicationId 'com.smsbridge.mobile'
         minSdk 26
         targetSdk 36
-        versionCode 19
-        versionName '1.3.2'
+        versionCode 21
+        versionName '1.3.4'
     }
 
     buildTypes {

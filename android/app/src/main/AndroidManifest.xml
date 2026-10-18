@@ -18,6 +18,14 @@
         android:name="android.hardware.telephony"
         android:required="false" />
 
+    <!-- 只在 Android 11+ 上能看到其他有启动入口的 App，用于「选择读取通知的 App」 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

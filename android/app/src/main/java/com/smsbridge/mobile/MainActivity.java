@@ -9,7 +9,9 @@ import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.res.ColorStateList;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
@@ -17,29 +19,38 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.provider.Telephony;
+import android.text.Editable;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** 圆润可爱风的手机端主界面。 */
 public final class MainActivity extends Activity implements SyncService.Listener {
     private static final int REQ_PERMISSIONS = 101;
+    private static final String GITHUB_URL = "https://github.com/wxhfywyovo/SmsBridge";
 
     private Prefs prefs;
     private ExecutorService io;
@@ -52,6 +63,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
     private LinearLayout permissionRow;
     private TextView notificationAccessLine;
     private Button notificationAccessButton;
+    private Button scopeButton;
     private EditText hostField;
     private EditText portField;
     private EditText pinField;
@@ -103,6 +115,10 @@ public final class MainActivity extends Activity implements SyncService.Listener
             startAction(SyncService.ACTION_START);
             setSyncSwitch(true);
         }
+        // 第一次打开必须看一遍免责声明。
+        if (!prefs.disclaimerAccepted()) {
+            showDisclaimer();
+        }
     }
 
     @Override
@@ -112,19 +128,6 @@ public final class MainActivity extends Activity implements SyncService.Listener
         refreshRecent();
         updateEventLine();
         updateNotificationAccessLine();
-        if (prefs.enabled() && !notificationAccessGranted()
-                && !prefs.notificationAccessAsked()) {
-            prefs.setNotificationAccessAsked(true);
-            new AlertDialog.Builder(this)
-                    .setTitle("夸克/深度求索消息读不到？")
-                    .setMessage("这类消息不是普通 SMS，不在短信数据库里。\n"
-                            + "开启「通知使用权」后，才能从系统通知里读取完整正文和验证码。\n\n"
-                            + "设置路径：应用与权限 → 特殊应用权限 → 通知使用权 → "
-                            + "允许「短信小桥通知读取」。")
-                    .setPositiveButton("去开启", (dialog, which) -> openNotificationAccess())
-                    .setNegativeButton("稍后", null)
-                    .show();
-        }
         if (prefs.enabled()) {
             maybeRequestBatteryExemption();
             if (checkSelfPermission(Manifest.permission.READ_SMS)
@@ -191,10 +194,17 @@ public final class MainActivity extends Activity implements SyncService.Listener
         logLine = text("等待启动…", 10.5f, muted, false);
         logLine.setGravity(Gravity.CENTER);
         root.addView(logLine);
-        TextView footer = text("SmsBridge 1.3.2 · 数据只在局域网里传输", 10, muted, false);
+        TextView footer = text("SmsBridge 1.3.4 · 数据只在局域网里传输", 10, muted, false);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, dp(4), 0, 0);
         root.addView(footer);
+
+        TextView github = text("GitHub 开源仓库：github.com/wxhfywyovo/SmsBridge", 10.5f,
+                mintDark, true);
+        github.setGravity(Gravity.CENTER);
+        github.setPadding(0, dp(4), 0, 0);
+        github.setOnClickListener(v -> openGithub());
+        root.addView(github);
         return scroll;
     }
 
@@ -421,13 +431,20 @@ public final class MainActivity extends Activity implements SyncService.Listener
         latest.setOnClickListener(v -> probeLatestSms());
         card.addView(latest);
 
-        notificationAccessLine = text("通知读取（所有 App，仅抓验证码）：检查中…",
+        notificationAccessLine = text("通知读取（只读勾选的 App，仅抓验证码）：检查中…",
                 10.5f, muted, false);
         notificationAccessLine.setPadding(0, dp(8), 0, 0);
         notificationAccessLine.setOnClickListener(v -> openNotificationAccess());
         card.addView(notificationAccessLine);
 
-        notificationAccessButton = button("开启通知读取（RCS/应用号兜底）", false);
+        scopeButton = button("选择读取通知的 App", false);
+        scopeButton.setOnClickListener(v -> showAppPicker());
+        LinearLayout.LayoutParams scopeParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        scopeParams.topMargin = dp(8);
+        card.addView(scopeButton, scopeParams);
+
+        notificationAccessButton = button("开启通知读取（通知兜底）", false);
         notificationAccessButton.setOnClickListener(v -> openNotificationAccess());
         LinearLayout.LayoutParams notifButtonParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -974,15 +991,27 @@ public final class MainActivity extends Activity implements SyncService.Listener
                 // 忽略
             }
         }
+        String scope = notificationScopeLabel();
         notificationAccessLine.setText(granted
                 ? (connected
-                ? "通知读取（所有 App，仅抓验证码）：已开启 · 服务已连接"
-                : "通知读取（所有 App，仅抓验证码）：已开启 · 等待连接")
-                : "通知读取（所有 App，仅抓验证码）：未开启，点这里开启");
+                ? "通知读取（" + scope + "）：已开启 · 服务已连接"
+                : "通知读取（" + scope + "）：已开启 · 等待连接")
+                : "通知读取（" + scope + "）：未开启，点这里开启");
         notificationAccessLine.setTextColor(granted ? mintDark : danger);
+        if (scopeButton != null) {
+            scopeButton.setText(prefs.notifPackages().isEmpty()
+                    ? "选择读取通知的 App（默认只读系统短信）"
+                    : "选择读取通知的 App（已选 "
+                    + prefs.notifPackages().size() + " 个）");
+        }
         if (notificationAccessButton != null) {
             notificationAccessButton.setVisibility(granted ? View.GONE : View.VISIBLE);
         }
+    }
+
+    private String notificationScopeLabel() {
+        Set<String> selected = prefs.notifPackages();
+        return selected.isEmpty() ? "默认只读系统短信" : "只读 " + selected.size() + " 个勾选的 App";
     }
 
     private void openNotificationAccess() {
@@ -1009,6 +1038,210 @@ public final class MainActivity extends Activity implements SyncService.Listener
         }
     }
 
+    // ------------------------------------------------- 免责声明 / 开源仓库
+
+    private void showDisclaimer() {
+        new AlertDialog.Builder(this)
+                .setTitle("免责声明")
+                .setMessage("本工具把你手机收到的短信通知转发给你自己配对的电脑，"
+                        + "只在你自己的局域网里传输，不经过任何服务器。\n\n"
+                        + "仅供个人使用，禁止商业用途；短信内容包含隐私，"
+                        + "请确认手机和电脑所在网络可信。\n\n"
+                        + "软件由 AI 生成，可能存在 Bug，作者不保证及时修复，使用后果自负。")
+                .setCancelable(false)
+                .setPositiveButton("我已知晓",
+                        (dialog, which) -> prefs.setDisclaimerAccepted(true))
+                .setNeutralButton("GitHub 开源仓库", (dialog, which) -> openGithub())
+                .setNegativeButton("不同意，退出", (dialog, which) -> {
+                    dialog.dismiss();
+                    finishAffinity();
+                })
+                .show();
+    }
+
+    private void openGithub() {
+        suppressAutoHide = true;
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL));
+            List<ResolveInfo> matches = getPackageManager().queryIntentActivities(intent, 0);
+            if (matches.size() == 1) {
+                intent.setPackage(matches.get(0).activityInfo.packageName);
+                startActivity(intent);
+            } else {
+                startActivity(Intent.createChooser(intent, "打开 GitHub 开源仓库"));
+            }
+        } catch (Exception e) {
+            toast("请用浏览器打开 github.com/wxhfywyovo/SmsBridge");
+        }
+    }
+
+    // ------------------------------------------------- 选择读取通知的 App
+
+    private void showAppPicker() {
+        PackageManager pm = getPackageManager();
+        List<String[]> pairs = new ArrayList<>();
+        for (ApplicationInfo info : pm.getInstalledApplications(0)) {
+            String pkg = info.packageName;
+            if (pkg == null || pkg.equals(getPackageName())) {
+                continue;
+            }
+            if (pm.getLaunchIntentForPackage(pkg) == null) {
+                continue;
+            }
+            String label = pkg;
+            try {
+                CharSequence shown = pm.getApplicationLabel(info);
+                if (shown != null && shown.length() > 0) {
+                    label = shown.toString();
+                }
+            } catch (Exception ignored) {
+                // 拿不到名称时保留包名
+            }
+            pairs.add(new String[]{label, pkg});
+        }
+        pairs.sort((a, b) -> a[0].compareToIgnoreCase(b[0]));
+
+        final List<String> allLabels = new ArrayList<>();
+        final List<String> allPkgs = new ArrayList<>();
+        for (String[] pair : pairs) {
+            allLabels.add(pair[0]);
+            allPkgs.add(pair[1]);
+        }
+
+        Set<String> checked = new LinkedHashSet<>(prefs.notifPackages());
+        String defaultSms = null;
+        try {
+            defaultSms = Telephony.Sms.getDefaultSmsPackage(this);
+        } catch (Exception ignored) {
+            // 忽略
+        }
+        if (checked.isEmpty() && defaultSms != null) {
+            checked.add(defaultSms);
+        }
+
+        final List<String> labels = new ArrayList<>();
+        final List<String> pkgs = new ArrayList<>();
+        EditText search = field("搜索 App 名称，比如「信息」", InputType.TYPE_CLASS_TEXT);
+        TextView hint = text("已勾选 " + checked.size() + " 个",
+                10.5f, muted, false);
+        hint.setPadding(0, dp(8), 0, dp(4));
+        Runnable refreshHint = () -> hint.setText("已勾选 " + checked.size() + " 个");
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_list_item_1) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                AppRowView row = convertView instanceof AppRowView
+                        ? (AppRowView) convertView : new AppRowView();
+                row.label.setText(labels.get(position));
+                row.pkg.setText(pkgs.get(position));
+                row.check.setChecked(checked.contains(pkgs.get(position)));
+                return row;
+            }
+
+            @Override
+            public int getCount() {
+                return labels.size();
+            }
+
+            @Override
+            public String getItem(int position) {
+                return labels.get(position);
+            }
+
+            @Override
+            public long getItemId(int position) {
+                return position;
+            }
+        };
+
+        ListView list = new ListView(this);
+        list.setAdapter(adapter);
+        list.setDividerHeight(0);
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            String pkg = pkgs.get(position);
+            if (checked.contains(pkg)) {
+                checked.remove(pkg);
+            } else {
+                checked.add(pkg);
+            }
+            refreshHint.run();
+            adapter.notifyDataSetChanged();
+        });
+
+        search.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence sequence, int start, int count,
+                    int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence sequence, int start, int before,
+                    int count) {
+                String key = sequence.toString().trim().toLowerCase();
+                labels.clear();
+                pkgs.clear();
+                for (int i = 0; i < allLabels.size(); i++) {
+                    String label = allLabels.get(i);
+                    String pkg = allPkgs.get(i);
+                    if (key.isEmpty() || label.toLowerCase().contains(key)
+                            || pkg.toLowerCase().contains(key)) {
+                        labels.add(label);
+                        pkgs.add(pkg);
+                    }
+                }
+                adapter.notifyDataSetChanged();
+                list.setSelection(0);
+            }
+
+            @Override
+            public void afterTextChanged(Editable sequence) {
+            }
+        });
+
+        TextView selectAll = text("全选当前结果", 10.5f, mintDark, true);
+        selectAll.setPadding(0, dp(4), 0, dp(8));
+        selectAll.setOnClickListener(v -> {
+            for (String pkg : pkgs) {
+                checked.add(pkg);
+            }
+            refreshHint.run();
+            adapter.notifyDataSetChanged();
+        });
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(16), dp(12), dp(16), dp(10));
+        body.addView(search);
+        body.addView(hint);
+        body.addView(selectAll);
+        body.addView(list, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(380)));
+
+        TextView githubLink = text("GitHub 开源仓库：github.com/wxhfywyovo/SmsBridge",
+                10f, mintDark, true);
+        githubLink.setGravity(Gravity.CENTER);
+        githubLink.setPadding(0, dp(10), 0, dp(2));
+        githubLink.setOnClickListener(v -> openGithub());
+        body.addView(githubLink);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("选择读取通知的 App")
+                .setView(body)
+                .setPositiveButton("保存", null)
+                .setNegativeButton("取消", null)
+                .create();
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            prefs.setNotifPackages(checked);
+            dialog.dismiss();
+            updateNotificationAccessLine();
+            toast(checked.isEmpty()
+                    ? "已保存：一个都没选，默认只读系统短信"
+                    : "已保存，只读取勾选的 " + checked.size() + " 个 App");
+        });
+    }
+
     private void showDiagnostics() {
         StringBuilder sb = new StringBuilder();
         sb.append("设备：").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n');
@@ -1031,11 +1264,12 @@ public final class MainActivity extends Activity implements SyncService.Listener
             sb.append("通知权限：").append(checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                     == PackageManager.PERMISSION_GRANTED ? "已授予" : "未授予").append('\n');
         }
-        sb.append("通知读取（RCS 兜底）：").append(notificationAccessGranted()
+        sb.append("通知读取（通知兜底）：").append(notificationAccessGranted()
                 ? "已开启" : "未开启").append('\n');
         sb.append("通知读取服务：").append(SmsNotificationListener.isConnected()
                 ? "已连接" : "未连接").append('\n');
-        sb.append("通知范围：所有 App（只有正文含验证码才同步）\n");
+        sb.append("通知范围：").append(notificationScopeLabel())
+                .append("（只有正文含验证码才同步）\n");
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         sb.append("电池优化：").append(pm != null
                 && pm.isIgnoringBatteryOptimizations(getPackageName())
@@ -1056,7 +1290,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
             }
         }
         sb.append("\n如果事件里没有「收到短信」：系统没把 SMS 广播给本应用。\n")
-                .append("常见原因：RCS 聊天/网络短信、默认短信应用限制、ROM 的短信或后台限制、\n")
+                .append("常见原因：默认短信应用限制、ROM 的短信或后台限制、\n")
                 .append("安装后未在系统设置里允许「受限制的设置」。\n")
                 .append("如果只有「收到短信」但没有「同步成功」：检查电脑端是否已连接。");
 
@@ -1162,7 +1396,7 @@ public final class MainActivity extends Activity implements SyncService.Listener
         }
         if (probe.latest == null) {
             sb.append("\n没有读到 SMS。\n")
-                    .append("如果权限、Cursor 都正常，可能是收件箱为空，或这条是 RCS/增强信息，")
+                    .append("如果权限、Cursor 都正常，可能是收件箱为空，或这条不是普通短信，")
                     .append("不会出现在 content://sms/inbox。\n");
         } else {
             sb.append("\n发件人：").append(probe.latest.from).append('\n');
@@ -1272,5 +1506,34 @@ public final class MainActivity extends Activity implements SyncService.Listener
 
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    /** 选择 App 列表的一行：勾选框 + 名称 + 包名。 */
+    private final class AppRowView extends LinearLayout {
+        final CheckBox check = new CheckBox(MainActivity.this);
+        final TextView label = text("", 13.5f, ink, false);
+        final TextView pkg = text("", 10f, muted, false);
+
+        AppRowView() {
+            super(MainActivity.this);
+            setOrientation(LinearLayout.HORIZONTAL);
+            setGravity(Gravity.CENTER_VERTICAL);
+            setPadding(dp(16), dp(10), dp(16), dp(10));
+            addView(check, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout column = new LinearLayout(MainActivity.this);
+            column.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams colParams = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            colParams.leftMargin = dp(12);
+            column.addView(label, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            column.addView(pkg, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            addView(column, colParams);
+        }
     }
 }

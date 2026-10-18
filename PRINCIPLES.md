@@ -21,7 +21,7 @@ SmsBridge 解决一个很具体的问题：
        │                                                 │
 ┌──────▼───────┐                                  ┌──────▼───────┐
 │ 短信 App /   │                                  │ Windows 剪贴板│
-│ 通知栏 / RCS │                                  │ history.jsonl│
+│ 通知栏       │                                  │ history.jsonl│
 └──────────────┘                                  └──────────────┘
 ```
 
@@ -34,8 +34,8 @@ SmsBridge 解决一个很具体的问题：
 | `MainActivity` | 界面、权限、配对、诊断、日志 |
 | `SyncService` | 前台服务：WebSocket 连接、队列、重连、保活 |
 | `SmsReceiver` | 接收 `SMS_RECEIVED` 广播 |
-| `SmsInboxReader` | 扫描 `content://sms/inbox` 兜底 |
-| `SmsNotificationListener` | 读取通知（RCS/应用号/WhatsApp/LINE/Telegram） |
+| `SmsInboxReader` | 扫描 `content://sms` 兜底 |
+| `SmsNotificationListener` | 读取你勾选的 App 的通知 |
 | `SmsCode` | 本地提取 4-8 位验证码 |
 | `Prefs` | 配对信息、设备 ID、队列、最近记录、事件 |
 | `Discovery` | UDP 发现电脑 |
@@ -48,8 +48,8 @@ SmsBridge 解决一个很具体的问题：
 按优先级：
 
 1. **短信广播**：系统收到 SMS 时发 `SMS_RECEIVED`，`SmsReceiver` 解析 `pdus`；
-2. **收件箱兜底**：部分 ROM 不把广播发给非默认短信应用，`SyncService` 用 `ContentObserver` + 30 秒轮询扫描 `content://sms/inbox`；
-3. **通知读取**：RCS/应用号/智能短信可能不在 SMS 数据库，只能从系统通知里读取；
+2. **收件箱兜底**：部分 ROM 不把广播发给非默认短信应用，`SyncService` 用 `ContentObserver` + 30 秒轮询扫描 `content://sms`；
+3. **通知读取**：部分短信不在 SMS 数据库，只能从系统通知里读取；只读你勾选的 App；
 4. **手动诊断**：读取最新短信/扫描收件箱/查看日志。
 
 ### 2.2 去重
@@ -254,7 +254,7 @@ Set-Clipboard -Value ...
 | `RECEIVE_SMS` | 接收短信广播 |
 | `READ_SMS` | 广播被拦截时扫描收件箱 |
 | `POST_NOTIFICATIONS` | 前台服务通知 |
-| 通知使用权 | 读取 RCS/应用号/即时通讯通知 |
+| 通知使用权 | 读取不在短信收件箱的通知 |
 | 电池优化白名单 | 锁屏后保持连接 |
 | 开机自启 | 重启后自动恢复 |
 
